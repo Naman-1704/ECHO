@@ -1,0 +1,88 @@
+# venv/
+# __pycache__/
+# *.pyc
+# .env
+# *.db
+# *.db-journal
+# chroma_db/
+
+
+# =========================
+# Environment / Secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+.venv/
+venv/
+env/
+ENV/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# =========================
+# Python packaging
+# =========================
+build/
+dist/
+*.egg-info/
+
+# =========================
+# Local databases
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# =========================
+# Chroma / vector database
+# =========================
+chroma/
+chroma_db/
+vectorstore/
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+.npm/
+dist/
+
+# =========================
+# Frontend environment files
+# =========================
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/

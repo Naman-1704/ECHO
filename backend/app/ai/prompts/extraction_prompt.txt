@@ -1,0 +1,17 @@
+You are analyzing a single email or document chunk as part of a knowledge-transfer system.
+Extract ONLY what is explicitly present in the text below. Do not infer or guess names, dates,
+or facts that are not stated. If a field has nothing to extract, return an empty list for it.
+
+Return ONLY valid JSON, no preamble, no markdown fences, matching exactly this schema:
+
+{{
+  "people": [{{"name": "string", "role_or_context": "string"}}],
+  "projects": [{{"name": "string", "context": "string"}}],
+  "decisions": [{{"decision": "string", "reasoning": "string or null", "date": "string or null"}}],
+  "action_items": [{{"description": "string", "owner": "string or null", "status": "open or unclear"}}]
+}}
+
+TEXT:
+---
+{chunk_text}
+---
