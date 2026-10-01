@@ -24,7 +24,7 @@ def _extract_body(payload: dict) -> str:
     return ""
 
 
-def fetch_messages(access_token: str, refresh_token: str, max_results: int = 50, page_token: str | None = None):
+def fetch_messages(access_token: str, refresh_token: str, max_results: int = 10, page_token: str | None = None):
     """
     Pulls a page of messages (metadata + parsed body). For an MVP, start with
     max_results=50 and a manual "sync more" trigger rather than pulling everything at once.

@@ -10,7 +10,7 @@ from app.ai.embeddings import embed_batch
 from app.ai.extraction import extract_structured_facts
 
 
-def run_gmail_ingestion(db: Session, user: User, max_results: int = 50) -> dict:
+def run_gmail_ingestion(db: Session, user: User, max_results: int = 10) -> dict:
     """
     Synchronous MVP version — runs inline via FastAPI BackgroundTasks.
     For production volume (thousands of emails), swap this for a Celery task

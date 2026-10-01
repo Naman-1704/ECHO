@@ -81,3 +81,20 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String)   # "chat_query" | "ingest_triggered" | ...
     detail: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ChatMessage(Base):
+    """
+    One turn of a user's conversation with Echo. Both the user's question and the
+    assistant's answer are stored as separate rows (role distinguishes them) so the
+    full conversation can be replayed in order — this is what makes chat history
+    persist across tabs/reloads instead of living only in frontend page state.
+    """
+    __tablename__ = "chat_messages"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=gen_uuid)
+    user_id: Mapped[str] = mapped_column(String, index=True)
+    role: Mapped[str] = mapped_column(String)  # "user" | "assistant"
+    content: Mapped[str] = mapped_column(Text)
+    sources: Mapped[dict] = mapped_column(JSON, nullable=True)  # only set on "assistant" rows
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

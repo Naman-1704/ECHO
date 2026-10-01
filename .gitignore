@@ -65,6 +65,7 @@ logs/
 node_modules/
 .npm/
 dist/
+.next
 
 # =========================
 # Frontend environment files
