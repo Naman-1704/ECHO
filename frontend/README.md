@@ -69,3 +69,6 @@ network-restricted sandbox, which isn't a code issue and won't happen on your ma
   addition (a `raw_item.item_date` sort + a new timeline component).
 - No responsive/mobile layout pass — the sidebar is fixed-width and will look cramped
   under ~768px. Not a blocker for a desktop-first internal tool, but worth flagging.
+
+## New pages
+Network (force-directed graph with filters and an evidence panel), Timeline, Attention, plus source links and a routing note in chat, a Gmail/Drive sync selector and PDF/Markdown handover report download on the Overview.

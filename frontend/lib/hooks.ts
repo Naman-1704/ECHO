@@ -75,3 +75,28 @@ export function useChatHistory() {
 
   return state;
 }
+
+/** Generic "fetch once with the session token" hook for the graph/insight pages. */
+export function useApi<T>(fn: (token: string) => Promise<T>, deps: unknown[] = []) {
+  const { token } = useAuth();
+  const [state, setState] = useState<{ data: T | null; loading: boolean; error: string | null }>({
+    data: null, loading: true, error: null,
+  });
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setState((s) => ({ ...s, loading: true, error: null }));
+    fn(token)
+      .then((data) => !cancelled && setState({ data, loading: false, error: null }))
+      .catch((err) => {
+        if (cancelled) return;
+        setState({ data: null, loading: false, error: err instanceof ApiError ? err.message : "Couldn't reach the backend." });
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, tick, ...deps]);
+
+  return { ...state, refetch: () => setTick((t) => t + 1) };
+}

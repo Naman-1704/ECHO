@@ -1,3 +1,4 @@
+import { SourceLink } from "@/components/shared/SourceLink";
 import type { ActionItem } from "@/lib/api-client";
 
 export function ActionRow({ action }: { action: ActionItem }) {
@@ -8,6 +9,7 @@ export function ActionRow({ action }: { action: ActionItem }) {
         <div>
           <p className="text-sm text-ink leading-relaxed">{action.description}</p>
           {action.owner && <p className="text-xs text-stone mt-1">Owner: {action.owner}</p>}
+          <div className="mt-1"><SourceLink source={action.source} /></div>
         </div>
       </div>
     </div>

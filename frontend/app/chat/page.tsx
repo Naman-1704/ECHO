@@ -10,6 +10,7 @@ import { askQuestion, clearChatHistory, ApiError } from "@/lib/api-client";
 const SUGGESTED_QUESTIONS = [
   "What projects am I taking over?",
   "Who should I talk to first?",
+  "Who worked on the most active project, and what did they decide?",
   "What decisions were made recently and why?",
   "What's still pending or unresolved?",
 ];
@@ -38,7 +39,7 @@ function ChatContent() {
 
     try {
       const result = await askQuestion(token, question);
-      setTurns((prev) => [...prev, { role: "assistant", content: result.answer, sources: result.sources }]);
+      setTurns((prev) => [...prev, { role: "assistant", content: result.answer, sources: result.sources, route: result.route }]);
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : "Couldn't reach the backend — is it running?";

@@ -9,6 +9,9 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/projects", label: "Projects" },
   { href: "/dashboard/people", label: "People" },
+  { href: "/dashboard/network", label: "Network" },
+  { href: "/dashboard/timeline", label: "Timeline" },
+  { href: "/dashboard/attention", label: "Attention" },
   { href: "/chat", label: "Ask Echo" },
 ];
 

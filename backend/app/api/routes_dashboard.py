@@ -1,72 +1,63 @@
-from collections import defaultdict
-
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.db.models import Chunk, GraphNode, RawItem, User
 from app.db.session import get_db
-from app.db.models import User, RawItem, Chunk
 from app.dependencies import get_current_user
+from app.graph.builder import ensure_graph, is_open
+from app.graph.queries import source_info
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+def _nodes(db: Session, user_id: str, type_: str) -> list[GraphNode]:
+    return list(db.execute(select(GraphNode).where(GraphNode.user_id == user_id, GraphNode.type == type_)).scalars())
 
 
 @router.get("/summary")
 def get_summary(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """
-    Aggregates the `extracted` JSON stored on every chunk (see ai/extraction.py) into
-    de-duplicated people/projects/decisions/action_items lists, each carrying enough
-    detail to link back to its source chunk — this is what lets the frontend show
-    "seen in N emails" and jump to source text for any fact on screen.
+    Overview data, read from the knowledge graph so "Priya", "Priya Sharma" and
+    "Sharma, Priya" are ONE person (the old per-chunk tally counted them three times).
+    The response shape is unchanged, with extra fields (aliases, last_seen, source) that
+    the UI uses for links back to the original email or document.
     """
-    chunks = list(db.execute(select(Chunk).where(Chunk.user_id == user.id)).scalars().all())
-    total_emails = db.execute(
-        select(RawItem).where(RawItem.user_id == user.id)
-    ).scalars().all()
+    total_items = db.execute(select(func.count()).select_from(RawItem).where(RawItem.user_id == user.id)).scalar()
+    total_chunks = db.execute(select(func.count()).select_from(Chunk).where(Chunk.user_id == user.id)).scalar()
+    has_graph = ensure_graph(db, user)
 
-    people: dict[str, dict] = {}
-    projects: dict[str, dict] = {}
-    decisions: list[dict] = []
-    action_items: list[dict] = []
+    people = [n for n in _nodes(db, user.id, "person") if not n.is_owner] if has_graph else []
+    projects = _nodes(db, user.id, "project") if has_graph else []
+    decisions = _nodes(db, user.id, "decision") if has_graph else []
+    actions = [a for a in _nodes(db, user.id, "action") if is_open(a.attrs.get("status"))] if has_graph else []
 
-    for chunk in chunks:
-        extracted = chunk.extracted or {}
+    decisions.sort(key=lambda n: n.first_seen.timestamp() if n.first_seen else 0, reverse=True)
+    actions.sort(key=lambda n: n.last_seen.timestamp() if n.last_seen else 0, reverse=True)
+    info = source_info(db, [n.attrs.get("chunk_id") for n in decisions[:20] + actions[:20] if n.attrs.get("chunk_id")])
 
-        for p in extracted.get("people", []):
-            name = (p.get("name") or "").strip()
-            if not name:
-                continue
-            entry = people.setdefault(name, {"name": name, "context_samples": [], "mention_count": 0})
-            entry["mention_count"] += 1
-            if p.get("role_or_context") and len(entry["context_samples"]) < 3:
-                entry["context_samples"].append(p["role_or_context"])
-
-        for proj in extracted.get("projects", []):
-            name = (proj.get("name") or "").strip()
-            if not name:
-                continue
-            entry = projects.setdefault(name, {"name": name, "context_samples": [], "mention_count": 0})
-            entry["mention_count"] += 1
-            if proj.get("context") and len(entry["context_samples"]) < 3:
-                entry["context_samples"].append(proj["context"])
-
-        for d in extracted.get("decisions", []):
-            if d.get("decision"):
-                decisions.append({**d, "chunk_id": chunk.id, "raw_item_id": chunk.raw_item_id})
-
-        for a in extracted.get("action_items", []):
-            if a.get("description"):
-                action_items.append({**a, "chunk_id": chunk.id, "raw_item_id": chunk.raw_item_id})
+    def entity(n: GraphNode, samples: list[str]) -> dict:
+        return {"id": n.id, "name": n.name, "aliases": n.aliases or [], "context_samples": samples[:3],
+                "mention_count": n.mention_count, "last_seen": n.last_seen.strftime("%Y-%m-%d") if n.last_seen else None}
 
     return {
         "stats": {
-            "total_emails_ingested": len(total_emails),
-            "total_chunks_processed": len(chunks),
+            "total_emails_ingested": total_items,
+            "total_chunks_processed": total_chunks,
             "unique_people": len(people),
             "unique_projects": len(projects),
         },
-        "people": sorted(people.values(), key=lambda x: -x["mention_count"]),
-        "projects": sorted(projects.values(), key=lambda x: -x["mention_count"]),
-        "decisions": decisions,
-        "pending_actions": [a for a in action_items if a.get("status") != "resolved"],
+        "people": [entity(n, (n.attrs or {}).get("roles", [])) for n in
+                   sorted(people, key=lambda n: (-n.mention_count, n.name.lower()))],
+        "projects": [entity(n, (n.attrs or {}).get("contexts", [])) for n in
+                     sorted(projects, key=lambda n: (-n.mention_count, n.name.lower()))],
+        "decisions": [{"decision": n.attrs.get("decision"), "reasoning": n.attrs.get("reasoning"),
+                       "date": n.attrs.get("date") or (n.first_seen.strftime("%Y-%m-%d") if n.first_seen else None),
+                       "chunk_id": n.attrs.get("chunk_id"), "raw_item_id": n.attrs.get("raw_item_id"),
+                       "source": info.get(n.attrs.get("chunk_id"))} for n in decisions],
+        "pending_actions": [{"description": n.attrs.get("description"), "owner": n.attrs.get("owner"),
+                             "status": n.attrs.get("status"),
+                             "last_seen": n.last_seen.strftime("%Y-%m-%d") if n.last_seen else None,
+                             "chunk_id": n.attrs.get("chunk_id"), "raw_item_id": n.attrs.get("raw_item_id"),
+                             "source": info.get(n.attrs.get("chunk_id"))} for n in actions],
     }

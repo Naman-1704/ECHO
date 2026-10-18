@@ -5,6 +5,7 @@ from email.utils import parsedate_to_datetime
 from googleapiclient.discovery import build
 
 from app.auth.google_oauth import credentials_from_stored_tokens
+from app.utils.dates import to_naive_utc
 
 
 def _get_service(access_token: str, refresh_token: str):
@@ -24,7 +25,7 @@ def _extract_body(payload: dict) -> str:
     return ""
 
 
-def fetch_messages(access_token: str, refresh_token: str, max_results: int = 10, page_token: str | None = None):
+def fetch_messages(access_token: str, refresh_token: str, max_results: int = 50, page_token: str | None = None):
     """
     Pulls a page of messages (metadata + parsed body). For an MVP, start with
     max_results=50 and a manual "sync more" trigger rather than pulling everything at once.
@@ -45,7 +46,7 @@ def fetch_messages(access_token: str, refresh_token: str, max_results: int = 10,
         body = _extract_body(msg["payload"])
 
         try:
-            item_date = parsedate_to_datetime(headers.get("Date", ""))
+            item_date = to_naive_utc(parsedate_to_datetime(headers.get("Date", "")))
         except Exception:
             item_date = datetime.utcnow()
 

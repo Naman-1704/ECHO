@@ -43,7 +43,7 @@ uvicorn app.main:app --reload --port 8000
 On first run this creates `kt_dashboard.db` (a SQLite file, for chunk text/metadata)
 and a `chroma_db/` folder (ChromaDB's persisted vector index) in the `backend/` folder
 — nothing to install or start separately. Visit
-` http://localhost:8000/health ` — you should see `{"status": "ok"}`.
+`http://localhost:8000/health` — you should see `{"status": "ok"}`.
 Visit `http://localhost:8000/docs` for interactive API docs (FastAPI auto-generates this).
 
 ## 4. Test the OAuth login flow
@@ -121,3 +121,12 @@ pointing at the raw items it pulled from.
   linked by chunk id. `ingestion/jobs.py` has a comment on the specific failure mode
   this creates (a crash mid-ingestion could leave a vector in Chroma with no matching
   SQLite row) and what to do about it if it ever matters at your scale.
+
+## Knowledge graph, insights and handover report
+
+- `app/graph/` builds a deterministic graph (people, projects, decisions, actions) from the stored extractions: no model calls, rebuilt after every sync (`POST /graph/rebuild` to force).
+- Entity resolution is conservative: ambiguous first names are never merged, conflicting emails block a merge.
+- Chat routes each question to graph / hybrid / vector retrieval (`app/ai/query_router.py`); citations stay `[source: N]`.
+- Endpoints: `GET /graph/network`, `/graph/node/{id}`, `/insights/attention`, `/insights/key-people`, `/insights/timeline`, `/reports/handover?format=pdf|md`, `POST /ingestion/sync?source=gmail|drive|all`.
+- Drive ingestion reads Google Docs/Slides and plain-text/markdown files (Sheets, PDFs and Office files are skipped).
+- Tests: `pip install -r requirements.txt pytest && python -m pytest -q` (65 tests, no model or network needed).

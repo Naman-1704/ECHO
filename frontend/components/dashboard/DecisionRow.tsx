@@ -1,3 +1,4 @@
+import { SourceLink } from "@/components/shared/SourceLink";
 import type { Decision } from "@/lib/api-client";
 
 export function DecisionRow({ decision }: { decision: Decision }) {
@@ -11,6 +12,7 @@ export function DecisionRow({ decision }: { decision: Decision }) {
             <p className="text-sm text-stone mt-1 leading-relaxed">Reasoning: {decision.reasoning}</p>
           )}
           {decision.date && <p className="text-xs text-stone-light mt-1">{decision.date}</p>}
+          <div className="mt-1"><SourceLink source={decision.source} /></div>
         </div>
       </div>
     </div>
