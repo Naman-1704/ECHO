@@ -1,14 +1,16 @@
 from functools import lru_cache
-from sentence_transformers import SentenceTransformer
 
 # Local, free, no API key needed — good for MVP/dev. 384-dim output.
-# If you later want higher quality, swap for an API-based embedding model,
-# but remember to update EMBEDDING_DIM in db/models.py and re-embed everything.
+# If you later want higher quality, swap for another model, but remember to re-embed
+# everything already stored in ChromaDB (dimensions must match).
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 @lru_cache(maxsize=1)
-def _get_model() -> SentenceTransformer:
+def _get_model():
+    # Imported lazily: sentence-transformers pulls in torch, which takes seconds to import.
+    # Deferring it keeps API startup fast and lets tests run without the heavy dependency.
+    from sentence_transformers import SentenceTransformer
     return SentenceTransformer(MODEL_NAME)
 
 

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Text, DateTime, ForeignKey, JSON, Boolean
+from sqlalchemy import String, Text, DateTime, ForeignKey, JSON, Boolean, Integer, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 # NOTE: embedding dimension must match the embedding model you use.
@@ -98,3 +98,51 @@ class ChatMessage(Base):
     content: Mapped[str] = mapped_column(Text)
     sources: Mapped[dict] = mapped_column(JSON, nullable=True)  # only set on "assistant" rows
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class GraphNode(Base):
+    """
+    One resolved entity in the knowledge graph. `person` and `project` nodes come from
+    entity resolution over extracted mentions and email headers (see graph/resolution.py);
+    `decision` and `action` nodes are de-duplicated facts. The whole graph for a user is
+    derived data: graph/builder.py can wipe and rebuild it at any time from `chunks`,
+    so nothing here is a source of truth.
+    """
+    __tablename__ = "graph_nodes"
+    __table_args__ = (UniqueConstraint("user_id", "type", "key", name="uq_graph_node_key"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=gen_uuid)
+    user_id: Mapped[str] = mapped_column(String, index=True)
+    type: Mapped[str] = mapped_column(String, index=True)   # person | project | decision | action
+    name: Mapped[str] = mapped_column(Text)                  # canonical display name
+    key: Mapped[str] = mapped_column(String)                 # normalized identity key
+    aliases: Mapped[list] = mapped_column(JSON, nullable=True)
+    mention_count: Mapped[int] = mapped_column(Integer, default=0)  # distinct chunks mentioning it
+    first_seen: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    is_owner: Mapped[bool] = mapped_column(Boolean, default=False)  # the mailbox owner (the predecessor)
+    attrs: Mapped[dict] = mapped_column(JSON, nullable=True)
+
+
+class GraphEdge(Base):
+    """
+    A weighted, evidence-carrying relationship between two nodes. `weight` is the number
+    of distinct chunks in which the relationship was observed, and `evidence` lists (a
+    capped number of) those chunk ids, so every edge can be traced back to source text.
+
+    Relations: WORKS_ON (person->project), COLLABORATES_WITH (person<->person, stored once
+    with src < dst), ABOUT (decision/action->project), INVOLVES (decision->person),
+    OWNS (person->action).
+    """
+    __tablename__ = "graph_edges"
+    __table_args__ = (UniqueConstraint("user_id", "src_id", "dst_id", "relation", name="uq_graph_edge"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=gen_uuid)
+    user_id: Mapped[str] = mapped_column(String, index=True)
+    src_id: Mapped[str] = mapped_column(String, index=True)
+    dst_id: Mapped[str] = mapped_column(String, index=True)
+    relation: Mapped[str] = mapped_column(String, index=True)
+    weight: Mapped[int] = mapped_column(Integer, default=1)
+    evidence: Mapped[list] = mapped_column(JSON, nullable=True)  # chunk ids, capped
+    first_seen: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, nullable=True)
