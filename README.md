@@ -1,132 +1,231 @@
-# Backend — Setup & Run Guide (M1 + M2 scope)
+<div align="center">
 
-This covers everything up through Week 3-5 of the project timeline: auth, ingestion,
-embeddings, extraction, and a working RAG chat endpoint. Graph DB / query routing
-(Week 4-5 "advanced" layer) is noted as a next step at the bottom — this version
-uses vector-only retrieval, which is a fully valid MVP on its own.
+# ECHO
 
-## 0. Prerequisites
-- Python 3.11+ (no Docker, no database server needed — SQLite + ChromaDB are both just local files/folders)
-- A Google Cloud project with Gmail API + Drive API enabled, OAuth credentials created
-  (see the step-by-step card in chat, or Google's OAuth docs) with redirect URI
-  `http://localhost:8000/auth/callback`
-- [Ollama](https://ollama.com) installed locally, with the model pulled:
+### Employee Context & Handoff Orchestrator
+
+**Give a successor the full story of their predecessor's work: who was involved, what was decided and why, what is still open, with every claim linked back to the original email or document.**
+
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-14-000000?logo=nextdotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)
+![ChromaDB](https://img.shields.io/badge/ChromaDB-vector%20store-FF6446)
+![Ollama](https://img.shields.io/badge/Ollama-local%20LLM-000000)
+
+</div>
+
+---
+
+## The problem
+
+When someone leaves a team, what they knew leaves with them. It lives in thousands of emails and shared documents: which vendor was chosen and why, who signed off on the budget, which tasks nobody picked up. The successor is left to search through an inbox keyword by keyword.
+
+## What ECHO does
+
+ECHO reads a predecessor's **Gmail** and **Google Drive** (read-only), extracts **people, projects, decisions (with reasoning) and action items**, links them into a **knowledge graph**, and gives the successor:
+
+| | |
+|---|---|
+| **Dashboard** | Overview, People and Projects pages built from the extracted record |
+| **Citation-grounded chat** | Ask in plain English; every answer cites numbered sources that link to the original email or document |
+| **Query router** | Relationship questions ("who worked on Atlas?") use the graph; explanatory ones ("why did we pick Vendor B?") also use document search |
+| **Network view** | An interactive graph of people and projects, with an evidence panel for each node |
+| **Who to talk to first** | People ranked by how many projects and colleagues they appear with |
+| **Attention report** | Open tasks with no owner, tasks left open too long, projects only one person knows about |
+| **Timeline** | Decisions and action items in date order |
+| **Handover report** | The whole record as a PDF or Markdown file, with source links |
+| **Privacy first** | Sensitive items are filtered *before* anything is stored, embedded or sent to a model, and the model runs **locally** |
+
+> No cloud LLM and no API key is needed. Inference runs on your machine through [Ollama](https://ollama.com).
+
+## Screenshots
+
+The screenshots below were captured from the running app on a small sample mailbox (a vendor-onboarding project called "Phoenix").
+
+<p align="center">
+  <img src="docs/screenshots/overview.jpg" width="48%" alt="Overview with key people and report download">
+  <img src="docs/screenshots/network.jpg" width="48%" alt="Network view with evidence panel">
+</p>
+<p align="center">
+  <img src="docs/screenshots/attention.jpg" width="48%" alt="Attention report">
+  <img src="docs/screenshots/timeline.jpg" width="48%" alt="Timeline">
+</p>
+<p align="center">
+  <img src="docs/screenshots/chat.jpg" width="48%" alt="Ask Echo with source preview and routing note">
+  <img src="docs/screenshots/people.jpg" width="48%" alt="People page">
+</p>
+
+*The chat capture used a stand-in for the language model because no local model was running; with Ollama running, the wording of answers comes from Qwen2.5.*
+
+## Architecture
+
+<p align="center"><img src="docs/architecture.jpg" width="70%" alt="ECHO system architecture"></p>
+
+Three tiers:
+
+- **Presentation:** Next.js 14, React, TypeScript, Tailwind CSS
+- **Application:** FastAPI with Google OAuth 2.0 and JWT sessions
+- **Storage:** SQLite for records and the graph, ChromaDB for vector search
+
+The full data flow is in [`docs/data-flow.png`](docs/data-flow.png).
+
+### How it works
+
+**Ingestion** (per synced item):
+`Gmail / Drive (read-only)` → `privacy filter` → `chunk (800 words, 150 overlap)` → `embed (all-MiniLM-L6-v2, 384-d)` → `extract people / projects / decisions / actions as JSON (Qwen2.5-7B)` → `store in SQLite + ChromaDB` → `rebuild the graph`
+
+**Knowledge graph** (deterministic, no model calls, rebuilt after each sync):
+
+- Nodes: person, project, decision, action.
+- Relations: `WORKS_ON`, `COLLABORATES_WITH`, `ABOUT`, `INVOLVES`, `OWNS`.
+- An edge's weight is the number of distinct chunks where both ends appear together. Each edge keeps the ids of its supporting chunks as evidence.
+- **Entity resolution is conservative.** "Priya", "Priya Sharma" and "Sharma, Priya" become one person. Two different people called "Sam" stay separate, because a bare first name merges only when exactly one candidate exists, fuzzy matches need similarity of at least 0.92, and conflicting email addresses block a merge. Automated senders (no-reply, etc.) never become people.
+- Near-identical decisions and tasks (token-set Jaccard of at least 0.70) are merged.
+
+**Question answering:**
+`question` → `router (graph / hybrid / vector)` → `graph facts + top-k chunks (k = 3 / 6 / 8, user-scoped)` → `one numbered context, [source: N]` → `local LLM` → `answer + links + routing note` → `saved to chat history`
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS |
+| Backend | Python, FastAPI, SQLAlchemy 2.0, Pydantic |
+| Auth | Google OAuth 2.0 (Gmail + Drive read-only), JWT |
+| Relational + graph store | SQLite |
+| Vector store | ChromaDB (HNSW, cosine) |
+| Embeddings | sentence-transformers `all-MiniLM-L6-v2` |
+| Local LLM | Ollama serving `qwen2.5:7b-instruct` |
+| Reports | ReportLab (PDF) |
+| Tests | pytest |
+
+## Project structure
+
+```
+.
+├── backend/
+│   ├── app/
+│   │   ├── main.py              # FastAPI app, routers, CORS
+│   │   ├── config.py            # settings from .env
+│   │   ├── auth/                # Google OAuth + session tokens
+│   │   ├── ingestion/           # Gmail & Drive connectors, privacy filter, chunking, sync job
+│   │   ├── ai/                  # embeddings, extraction, query router, RAG pipeline, chat, prompts
+│   │   ├── graph/               # entity resolution, graph builder, queries, insights
+│   │   ├── reports/             # handover report (PDF / Markdown)
+│   │   ├── api/                 # chat, dashboard, graph/insights, ingestion, report routes
+│   │   ├── db/                  # SQLAlchemy models, session, ChromaDB store
+│   │   └── utils/               # source links, date helpers
+│   ├── scripts/test_local_llm.py
+│   ├── tests/                   # 65 automated tests
+│   ├── requirements.txt
+│   └── .env.example
+├── frontend/
+│   ├── app/                     # pages: dashboard, projects, people, network, timeline, attention, chat
+│   ├── components/              # shared, dashboard, network, chat components
+│   └── lib/                     # API client, auth, hooks, graph layout
+└── docs/                        # diagrams and screenshots
+```
+
+## Getting started
+
+### Prerequisites
+
+- Python 3.11+ and Node.js 18+
+- [Ollama](https://ollama.com) with the model pulled:
   ```bash
-  ollama pull qwen2.5:7b-instruct
+  ollama pull qwen2.5:7b-instruct      # use phi3.5 if you have under ~8 GB free RAM
   ```
-  (use `phi3.5` instead if your machine has under ~8GB free RAM)
-- Before running the app, sanity-check the local model works:
-  ```bash
-  cd backend && python scripts/test_local_llm.py
-  ```
+- A Google Cloud project with the **Gmail API** and **Drive API** enabled and an OAuth client (type: Web application) with the redirect URI `http://localhost:8000/auth/callback`. While the consent screen is in *Testing* mode, add your account as a test user.
 
-## 1. Set up your Python environment
+No Docker and no database server are needed: SQLite and ChromaDB are local files.
+
+### 1. Backend
+
 ```bash
+cd backend
 python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+source venv/bin/activate              # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-## 2. Configure environment variables
-```bash
-cp .env.example .env
-```
-Fill in `.env` with your real `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and a random
-`SECRET_KEY` (e.g. `python3 -c "import secrets; print(secrets.token_hex(32))"`).
-`DATABASE_URL`, `OLLAMA_BASE_URL`, and `OLLAMA_MODEL` already default correctly if you
-followed the prerequisites above — only change them if you used a different model name.
-
-## 3. Run the API
-```bash
+cp .env.example .env                  # then fill in the values below
+python scripts/test_local_llm.py      # optional: checks Ollama responds
 uvicorn app.main:app --reload --port 8000
 ```
-On first run this creates `kt_dashboard.db` (a SQLite file, for chunk text/metadata)
-and a `chroma_db/` folder (ChromaDB's persisted vector index) in the `backend/` folder
-— nothing to install or start separately. Visit
-`http://localhost:8000/health` — you should see `{"status": "ok"}`.
-Visit `http://localhost:8000/docs` for interactive API docs (FastAPI auto-generates this).
 
-## 4. Test the OAuth login flow
-Open `http://localhost:8000/auth/login` in a browser. You'll be sent through Google's
-consent screen (make sure you're added as a test user on the OAuth consent screen if
-the app is still in "Testing" mode) and redirected back with a session token appended
-to the frontend URL. Copy that token — you'll use it as a Bearer token for the next steps.
+Open <http://localhost:8000/health> (should return `{"status": "ok"}`) and <http://localhost:8000/docs> for the interactive API docs.
 
-## 5. Trigger a test ingestion sync
+### 2. Frontend
+
 ```bash
-curl -X POST http://localhost:8000/ingestion/sync \
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
-  -H "Content-Type: application/json"
+cd frontend
+npm install
+npm run dev
 ```
-This pulls your 50 most recent Gmail messages, filters out anything matching the
-redaction rules, chunks + embeds + extracts facts from the rest, and stores everything.
-Expect this to take a few minutes the first time — one local model call per chunk for
-extraction, which is the slowest step (see the local-model notes further down).
 
-Check it worked:
+Open <http://localhost:3000>, sign in with Google, then press **Sync** on the Overview page (choose Gmail, Drive documents, or both).
+
+If your backend is not at `http://localhost:8000`, set `NEXT_PUBLIC_API_BASE_URL` in `frontend/.env.local`.
+
+### Configuration (`backend/.env`)
+
+| Variable | Description | Default |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | OAuth client id | required |
+| `GOOGLE_CLIENT_SECRET` | OAuth client secret | required |
+| `GOOGLE_REDIRECT_URI` | Must match the Google console | `http://localhost:8000/auth/callback` |
+| `SECRET_KEY` | Signs session tokens. Generate with `python3 -c "import secrets; print(secrets.token_hex(32))"` | required |
+| `DATABASE_URL` | SQLite file | `sqlite:///./kt_dashboard.db` |
+| `CHROMA_PERSIST_DIR` | Vector index folder | `./chroma_db` |
+| `OLLAMA_BASE_URL` | Ollama server | `http://localhost:11434` |
+| `OLLAMA_MODEL` | Local model name | `qwen2.5:7b-instruct` |
+| `FRONTEND_URL` | Allowed CORS origin | `http://localhost:3000` |
+
+## API overview
+
+All routes except `/auth/*` and `/health` need `Authorization: Bearer <session token>`.
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/auth/login`, `/auth/callback` | Google sign-in |
+| POST | `/ingestion/sync?source=gmail\|drive\|all` | Ingest new items and rebuild the graph |
+| GET | `/dashboard/summary` | Overview, people, projects, decisions, pending actions |
+| GET | `/graph/network` | Graph view with filters (`types`, `min_weight`, `hide_owner`, `limit`, `focus`) |
+| GET | `/graph/node/{id}` | A node with its connections and evidence |
+| POST | `/graph/rebuild` | Rebuild the graph from stored extractions |
+| GET | `/insights/attention`, `/insights/key-people`, `/insights/timeline` | Successor guidance |
+| GET | `/reports/handover?format=pdf\|md` | Download the handover report |
+| POST | `/chat/ask` | Ask a question |
+| GET / DELETE | `/chat/history` | Read or clear the saved conversation |
+
+## Testing
+
 ```bash
-sqlite3 kt_dashboard.db "SELECT count(*) FROM chunks;"
+cd backend
+pip install pytest
+python -m pytest -q
 ```
-(if `sqlite3` isn't installed as a CLI tool, just open `kt_dashboard.db` with a GUI
-tool like DB Browser for SQLite instead)
 
-## 6. Ask a question
-```bash
-curl -X POST http://localhost:8000/chat/ask \
-  -H "Authorization: Bearer YOUR_SESSION_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"question": "What projects am I taking over?"}'
-```
-You should get back an `answer` grounded in your actual inbox, plus a `sources` list
-pointing at the raw items it pulled from.
+65 tests run without a language model, Google account or network access, using a deliberately messy sample mailbox. They cover entity resolution, graph construction, the query router, source numbering, per-user isolation, the report, and ingestion with a failing source.
 
-## 7. Where to go next (matches Week 4-7 of the timeline)
-- **Drive connector**: same pattern as `gmail_connector.py` — use `googleapiclient` with
-  the Drive API's `files.list` / `files.export` (for Google Docs) or `files.get` (for
-  binary files), then feed results through the same chunking/embedding/extraction path.
-- **Graph layer + query router**: add a `graph/` module, extract relationships from
-  `extracted` JSON already stored on each `Chunk`, and write a `query_router.py` that
-  decides "who worked on X"-style questions should hit the graph instead of vector search.
-- **Handover report export**: aggregate `Chunk.extracted` JSON per user into a PDF/doc —
-  this can reuse everything already stored, no new ingestion needed.
-- **Move ingestion to Celery**: once you're testing with real full-size mailboxes instead
-  of `max_results=50`, synchronous ingestion will hit request timeouts — swap
-  `run_gmail_ingestion` to a Celery task and add a status-polling endpoint.
-- **Testing**: `scripts/seed_test_data.py` and `tests/` are scaffolded but empty — Week 3
-  is a good time for M4 to start writing extraction/chat accuracy tests against this.
+These tests check that the system behaves as designed. They do **not** measure how accurate the language model's extraction or answers are on real mailboxes.
 
-## Notes on running a local model instead of a hosted API
-- Extraction and chat both go through `app/ai/llm_client.py`, which calls Ollama's local
-  API — nothing leaves your machine, and there's no per-call cost, which matters since
-  extraction runs once per chunk across potentially thousands of emails.
-- `force_json=True` in `extraction.py` uses Ollama's JSON-constrained generation mode.
-  This matters more for local 7B-class models than it would for a large hosted model —
-  without it, expect noticeably more parse failures (stray prose around the JSON).
-- Expect extraction to be slower than a hosted API, especially on CPU-only machines
-  (roughly 5-15 tokens/sec for a 7B model). For a full ingestion run of hundreds of
-  emails, budget real time for this — it's a good candidate to move to a background
-  job (see Celery note below) even before you hit production mailbox volumes.
-- If a teammate has a GPU (even a modest one, 6GB+ VRAM), running Ollama on their
-  machine and pointing `OLLAMA_BASE_URL` at it over the local network will be
-  dramatically faster than CPU-only — worth doing before your Week 6 evaluation runs.
+## Privacy and security
 
-## Notes on what's intentionally simplified for MVP speed
-- Extraction runs synchronously, one model call per chunk — fine at `max_results=50`,
-  will need batching/async for full mailbox volume.
-- No Alembic migrations yet — `Base.metadata.create_all()` is fine until your schema
-  stabilizes, then switch to Alembic before the schema changes get risky to manage by hand.
-- Session tokens are passed via URL query param after OAuth for simplicity — switch to
-  an httpOnly cookie before this touches any real data.
-- Chunk text/metadata lives in SQLite; embeddings live in ChromaDB — two datastores
-  linked by chunk id. `ingestion/jobs.py` has a comment on the specific failure mode
-  this creates (a crash mid-ingestion could leave a vector in Chroma with no matching
-  SQLite row) and what to do about it if it ever matters at your scale.
+- Google access is **read-only** (Gmail and Drive scopes).
+- Items matching sensitive subjects or patterns (for example performance reviews, medical topics, salary mentions, SSN-like and card-like numbers) are **excluded or redacted before** storage, embedding or extraction. This is defense in depth, not a guarantee: the filter only catches what its rules describe, so a consent-and-review step by the departing employee is still recommended.
+- The language model and embeddings run **locally**; no email content is sent to a third-party AI service.
+- Every query, graph view and report is scoped to the signed-in user.
+- Answers are instructed to use only the supplied sources and to say when they are insufficient. Still, connections in the graph mean "appeared together", not "owns", so check the linked source before acting on anything important.
 
-## Knowledge graph, insights and handover report
+## Limitations and roadmap
 
-- `app/graph/` builds a deterministic graph (people, projects, decisions, actions) from the stored extractions: no model calls, rebuilt after every sync (`POST /graph/rebuild` to force).
-- Entity resolution is conservative: ambiguous first names are never merged, conflicting emails block a merge.
-- Chat routes each question to graph / hybrid / vector retrieval (`app/ai/query_router.py`); citations stay `[source: N]`.
-- Endpoints: `GET /graph/network`, `/graph/node/{id}`, `/insights/attention`, `/insights/key-people`, `/insights/timeline`, `/reports/handover?format=pdf|md`, `POST /ingestion/sync?source=gmail|drive|all`.
-- Drive ingestion reads Google Docs/Slides and plain-text/markdown files (Sheets, PDFs and Office files are skipped).
-- Tests: `pip install -r requirements.txt pytest && python -m pytest -q` (65 tests, no model or network needed).
+- Sync runs inside a single request, which suits a few dozen items; full-mailbox volumes need a background worker with progress reporting.
+- Chat is one conversation thread per user.
+- Drive ingestion skips Sheets, PDFs and Office files.
+- Extraction quality depends on the local model; a larger annotated evaluation is still to be done.
+- Planned: employee consent and review workflow, more sources (calendar, chat, meeting notes), multi-hop graph questions, multiple chat threads.
+
+## License
+
+This project is released under the [MIT License](LICENSE).
